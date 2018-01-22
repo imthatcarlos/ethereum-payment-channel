@@ -44,7 +44,7 @@ contract Channels {
 
   mapping (address => uint) balances;
   mapping (bytes32 => Channel) channels;
-  mapping (address => mapping(address => bytes32)) senderToRecipient;
+  mapping (address => mapping(address => bytes32)) activeIds;
 
   //============================================================================
   // MODIFIERS
