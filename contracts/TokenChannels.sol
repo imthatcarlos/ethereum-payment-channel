@@ -12,7 +12,7 @@ import 'zeppelin-solidity/contracts/token/ERC20.sol';
  * This implementation only allows for one active channel between two
  * accounts, in one direction (Alice -> Bob && Bob -> Alice)
  */
-contract Channels {
+contract TokenChannels {
 
   //============================================================================
   // EVENTS
@@ -22,7 +22,6 @@ contract Channels {
   event ChannelClosed(bytes32 id, uint withChallengePeriod);
   event ChannelChallenged(bytes32 id, address by, uint value);
   event ChannelFinalized(bytes32 id, address by, uint value);
-
 
   //============================================================================
   // STORAGE
@@ -120,7 +119,6 @@ contract Channels {
    */
   function closeChannel(bytes32[4] h, uint8 v, uint256 value, uint256 nonce)
     public
-    validChannel(h[0])
     notClosed(h[0])
   {
     Channel storage channel = channels[h[0]];
@@ -136,11 +134,14 @@ contract Channels {
 
       // pay the recipient and refund the remainder to the sender
       ERC20 tokenObject = ERC20(channel.token);
-      require(tokenObject.transfer(channel.recipient, channel.value));
-      require(tokenObject.transfer(channel.sender, (channel.deposit - channel.value)));
+      require(tokenObject.transfer(channel.recipient, value));
+      require(tokenObject.transfer(channel.sender, (channel.deposit - value)));
 
       // close the channel
       channel.state = ChannelState.Closed;
+
+      // update the final value
+      channel.value = value;
 
       // remove from lookup
       delete activeIds[channel.sender][channel.recipient];
@@ -223,25 +224,34 @@ contract Channels {
 
   /**
    * Verify that the message sent is valid
+   * All messages must be signed by the channel sender
    *
    * @param h     signature with data = [id, message_hash, r, s]
    * @param v     Component of signature "h" from sender
    * @param value Amount in wei to be sent
    */
-  function verifyMsg(bytes32[4] h, uint8 v, uint256 value)
+  function verifyMsg(bytes32[4] h, uint8 v, uint value)
     public
     validChannel(h[0])
     constant
     returns (bool)
   {
-    address signer = ecrecover(h[1], v, h[2], h[3]);
+    // testrpc and parity adds prefix when signing
+    // https://github.com/ethereum/wiki/wiki/JSON-RPC#eth_sign
+    bytes memory prefix = "\x19Ethereum Signed Message:\n32";
+    bytes32 prefixedHash = keccak256(prefix, h[1]);
+
+    address signer = ecrecover(prefixedHash, v, h[2], h[3]);
     if (signer != channels[h[0]].sender) { return false; }
 
+    // TODO: can we verify hash message like this?
     // validate that the hash is of the channel id and with the right value
-    bytes32 proof = keccak256(h[0], value);
+    /* bytes32 proof = keccak256(h[0], value);
+    proof = keccak256(prefix, proof);
 
-    if (proof != h[1]) { return false; }
-    else if (value > channels[h[0]].deposit) { return false; }
+    if (proof != prefixedHash) { return false; } */
+
+    if (value > channels[h[0]].deposit) { return false; }
 
     return true;
   }
@@ -267,7 +277,8 @@ contract Channels {
       address recipient,
       uint deposit,
       address token,
-      ChannelState state
+      ChannelState state,
+      uint value
     )
   {
     Channel memory channel = channels[id];
@@ -277,6 +288,7 @@ contract Channels {
     deposit = channel.deposit;
     token = channel.token;
     state = channel.state;
+    value = channel.value;
   }
 
   function getChannelStatus(bytes32 id)
