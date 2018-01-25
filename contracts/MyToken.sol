@@ -1,6 +1,6 @@
 pragma solidity ^0.4.18;
 
-import '../node_modules/zeppelin-solidity/contracts/token/MintableToken.sol';
+import 'zeppelin-solidity/contracts/token/MintableToken.sol';
 
 /*
  * A MintableToken is both a StandardToken and Ownable
